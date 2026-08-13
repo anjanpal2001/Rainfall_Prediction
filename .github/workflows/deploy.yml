@@ -1,4 +1,4 @@
-name: Deploy Rainfall Prediction API to EC2
+name: CI/CD Pipeline for Amazon Linux EC2, Docker & S3
 
 on:
   push:
@@ -6,59 +6,66 @@ on:
       - main
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+     
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Setup Python and Train Model
-        uses: actions/setup-python@v5
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Train & Upload Model to S3
+      - name: Install Dependencies & Train Model
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
         run: |
           pip install -r requirements.txt
-          
-          S3_BUCKET="rainfall-prediction-bucket-2026"
-          if ! aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null; then
-            echo "Creating S3 Bucket: $S3_BUCKET"
-            aws s3api create-bucket --bucket "$S3_BUCKET" --region ${{ secrets.AWS_REGION }}
-          fi
-
           python models/train_model.py
 
-      - name: Deploy Container to EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/rainfall-app:latest
+
+     
+      - name: Deploy Docker Container to EC2
+        uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            mkdir -p ~/app && cd ~/app
+            # ১. আগের কন্টেইনার বন্ধ ও রিমুভ করা
+            sudo docker stop rainfall-container || true
+            sudo docker rm rainfall-container || true
 
-            if [ -d ".git" ]; then
-              git pull origin main
-            else
-              git clone https://github.com/<YOUR_GITHUB_USERNAME>/Rainfall_Prediction_Project.git .
-            fi
+            # ২. লেটেস্ট Docker Image পুল করা
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/rainfall-app:latest
 
-            docker build -t rainfall-api .
-            docker stop rainfall-app || true
-            docker rm rainfall-app || true
-
-            docker run -d -p 8000:8000 \
-              -e S3_BUCKET_NAME="rainfall-prediction-bucket-2026" \
-              -e AWS_REGION="${{ secrets.AWS_REGION }}" \
+            # ৩. নতুন Docker Container চালু করা
+            sudo docker run -d \
+              --name rainfall-container \
+              -p 8000:8000 \
               -e AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
               -e AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
-              --name rainfall-app rainfall-api
+              -e AWS_REGION="${{ secrets.AWS_REGION }}" \
+              -e S3_BUCKET_NAME="${{ secrets.S3_BUCKET_NAME }}" \
+              ${{ secrets.DOCKERHUB_USERNAME }}/rainfall-app:latest
