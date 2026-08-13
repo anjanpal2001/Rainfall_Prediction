@@ -53,14 +53,14 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # ১. আগের কন্টেইনার বন্ধ ও রিমুভ করা
+            
             sudo docker stop rainfall-container || true
             sudo docker rm rainfall-container || true
 
-            # ২. লেটেস্ট Docker Image পুল করা
+     
             sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/rainfall-app:latest
 
-            # ৩. নতুন Docker Container চালু করা
+            
             sudo docker run -d \
               --name rainfall-container \
               -p 8000:8000 \
