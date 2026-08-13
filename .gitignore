@@ -1,0 +1,22 @@
+# Environments
+venv/
+env/
+.venv/
+
+# Environment Variables & Secrets (CRITICAL for AWS Keys)
+.env
+
+# Data files (Avoid uploading large CSVs)
+data/*.csv
+!data/rainfall_data.csv.example
+
+# Saved ML Models (Upload to S3 instead of GitHub)
+models/*.pkl
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+
+# IDE Settings
+.vscode/
+.idea/
