@@ -66,7 +66,7 @@ print("Model trained and saved successfully at", local_model_path)
 # upload the model to s3 bucket
 S3_BUCKET = os.getenv("S3_BUCKET_NAME", "rainfall-prediction-bucket-2026")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-
+# S3 BUCKET PUSH 
 def upload_to_s3():
     try:
         s3 = boto3.client('s3', region_name=AWS_REGION)
