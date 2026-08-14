@@ -1,8 +1,10 @@
-fastapi==0.110.0
-uvicorn==0.23.0
-boto3==1.34.0
-scikit-learn
+fastapi
+uvicorn
 pandas
 numpy
-pydantic
-dotenv
+scikit-learn
+joblib
+boto3
+python-dotenv
+jinja2
+python-multipart

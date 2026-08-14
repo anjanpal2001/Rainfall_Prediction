@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rainfall Prediction System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="card">
+        <h2>🌧️ Rainfall Prediction</h2>
+        <p class="subtitle">Enter weather parameters to predict rainfall</p>
+        
+        <form action="/predict-ui" method="post">
+            <div class="input-group">
+                <label>Temperature at 3pm (°C)</label>
+                <input type="number" step="any" name="Temp3pm" placeholder="e.g. 25.4" required>
+            </div>
+
+            <div class="input-group">
+                <label>Humidity at 3pm (%)</label>
+                <input type="number" step="any" name="Humidity3pm" placeholder="e.g. 70" required>
+            </div>
+
+            <div class="input-group">
+                <label>Wind Speed at 3pm (km/h)</label>
+                <input type="number" step="any" name="WindSpeed3pm" placeholder="e.g. 30" required>
+            </div>
+
+            <div class="input-group">
+                <label>Pressure at 3pm (hPa)</label>
+                <input type="number" step="any" name="Pressure3pm" placeholder="e.g. 1012.5" required>
+            </div>
+
+            <button type="submit" class="btn">Predict Weather</button>
+        </form>
+
+        {% if prediction %}
+            <div class="result-box {{ result_class }}">
+                <h3>{{ prediction }}</h3>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

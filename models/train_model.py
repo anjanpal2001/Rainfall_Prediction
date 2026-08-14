@@ -2,27 +2,30 @@ import os
 import pandas as pd
 import joblib
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
 import boto3
 from dotenv import load_dotenv
 
-# load aws_ keys from .env
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import accuracy_score
+
+# Load environment variables
 load_dotenv()
 
-# ১. make conform to create folder
-
+# 1. Ensure required directories exist
 os.makedirs("models", exist_ok=True)
 os.makedirs("data", exist_ok=True)
 csv_file_path = "data/rainfall_data.csv"
 
-# ২. Creation of data set
-
+# 2. Create sample dataset if it does not exist
 if not os.path.exists(csv_file_path):
     print("Creating local dataset for training...")
     np.random.seed(42)
-    n_samples = 8000
+    n_samples = 20000
     
     data = {
         'Temp3pm': np.random.uniform(10, 42, n_samples),
@@ -31,14 +34,11 @@ if not os.path.exists(csv_file_path):
         'Pressure3pm': np.random.uniform(995, 1030, n_samples),
         'RainTomorrow': np.random.choice(['Yes', 'No'], size=n_samples, p=[0.3, 0.7])
     }
-    
-    df_new = pd.DataFrame(data)
-    df_new.to_csv(csv_file_path, index=False)
+    pd.DataFrame(data).to_csv(csv_file_path, index=False)
     print(f"Dataset created and saved to {csv_file_path}")
 
-# 3.Load the data sert and process
+# 3. Load dataset and preprocess
 df = pd.read_csv(csv_file_path)
-
 features = ['Temp3pm', 'Humidity3pm', 'WindSpeed3pm', 'Pressure3pm']
 
 for col in features:
@@ -46,34 +46,111 @@ for col in features:
 
 df_filtered = df[features + ['RainTomorrow']].dropna()
 df_filtered['RainTomorrow'] = df_filtered['RainTomorrow'].map({'Yes': 1, 'No': 0})
+X = df_filtered[features]
+y = df_filtered['RainTomorrow']
 
-# 4. model training 
+# Standard Scaler
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# 4. Train-Test Split
 X_train, X_test, y_train, y_test = train_test_split(
-    df_filtered[features], df_filtered['RainTomorrow'], test_size=0.2, random_state=42
+    X_scaled, y, test_size=0.2, random_state=42
 )
 
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
+# 5. Define 6 ML Models and Hyperparameter Grids
+models_and_params = {
+    'RandomForest': (
+        RandomForestClassifier(random_state=42),
+        {'n_estimators': [50, 100], 'max_depth': [5, 10, None]}
+    ),
+    'GradientBoosting': (
+        GradientBoostingClassifier(random_state=42),
+        {'n_estimators': [50, 100], 'learning_rate': [0.01, 0.1]}
+    ),
+    'AdaBoost': (
+        AdaBoostClassifier(random_state=42),
+        {'n_estimators': [50, 100], 'learning_rate': [0.01, 0.1]}
+    ),
+    'DecisionTree': (
+        DecisionTreeClassifier(random_state=42),
+        {'max_depth': [3, 5, 10], 'criterion': ['gini', 'entropy']}
+    ),
+    'LogisticRegression': (
+        LogisticRegression(random_state=42),
+        {'C': [0.1, 1.0, 10.0]}
+    ),
+    'SupportVectorMachine': (
+        SVC(probability=True, random_state=42),
+        {'C': [0.1, 1.0, 10.0], 'kernel': ['rbf', 'linear']}
+    )
+}
 
-y_pred = model.predict(X_test)
-print(f"Model Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+best_model = None
+best_accuracy = 0.0
+best_model_name = ""
 
-# 5. save the model
+print("---------- Starting Hyperparameter Tuning on 6 ML Models ----------")
+for name, (model, params) in models_and_params.items():
+    grid = GridSearchCV(model, params, cv=3, scoring='accuracy', n_jobs=-1)
+    grid.fit(X_train, y_train)
+    tuned_model = grid.best_estimator_
+    y_pred = tuned_model.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+    
+    print(f"Model: {name:<22} | Best Params: {grid.best_params_} | Test Accuracy: {acc:.4f}")
+    if acc > best_accuracy:
+        best_accuracy = acc
+        best_model = tuned_model
+        best_model_name = name
+
+print("\n" + "="*50)
+print(f"BEST MODEL : {best_model_name} with Accuracy: {best_accuracy:.4f}")
+print("="*50)
+
+# File paths for saving
 local_model_path = "models/rainfall_model.pkl"
-joblib.dump(model, local_model_path)
-print("Model trained and saved successfully at", local_model_path)
+scaler_path = "models/scaler.pkl"
 
-# upload the model to s3 bucket
+# Save the best trained model and scaler objects
+joblib.dump(best_model, local_model_path)
+joblib.dump(scaler, scaler_path)
+print("Model and Scaler successfully saved locally.")
+
+# S3 configuration
 S3_BUCKET = os.getenv("S3_BUCKET_NAME", "rainfall-prediction-bucket-2026")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-# S3 BUCKET PUSH 
+
 def upload_to_s3():
+    if not S3_BUCKET:
+        raise ValueError("S3_BUCKET_NAME environment variable is not set.")
+    
+    s3 = boto3.client('s3', region_name=AWS_REGION)
+    
+    # Check if bucket exists, create if missing
     try:
-        s3 = boto3.client('s3', region_name=AWS_REGION)
+        s3.head_bucket(Bucket=S3_BUCKET)
+        print(f"Bucket '{S3_BUCKET}' exists.")
+    except Exception:
+        print(f"Bucket '{S3_BUCKET}' does not exist. Creating it now...")
+        if AWS_REGION == "us-east-1":
+            s3.create_bucket(Bucket=S3_BUCKET)
+        else:
+            s3.create_bucket(
+                Bucket=S3_BUCKET,
+                CreateBucketConfiguration={'LocationConstraint': AWS_REGION}
+            )
+        print(f"Bucket '{S3_BUCKET}' created successfully.")
+
+    # Upload model and scaler files to S3
+    try:
         s3.upload_file(local_model_path, S3_BUCKET, "models/rainfall_model.pkl")
-        print(f"Model uploaded to S3 Bucket ({S3_BUCKET}) successfully.")
+        print(f"Successfully uploaded {local_model_path} to S3 Bucket '{S3_BUCKET}'.")
+        s3.upload_file(scaler_path, S3_BUCKET, "models/scaler.pkl")
+        print(f"Successfully uploaded {scaler_path} to S3 Bucket '{S3_BUCKET}'.")
     except Exception as e:
-        print(f"Error occurred while uploading to S3: {e}")
+        print(f"Critical Upload Failure: {e}")
+        raise e
 
 if __name__ == "__main__":
     upload_to_s3()
