@@ -9,26 +9,35 @@ from pydantic import BaseModel
 
 app = FastAPI(title="Rainfall Prediction Web App")
 
-# Ensure static & templates directory mapping
-os.makedirs("static", exist_ok=True)
-os.makedirs("templates", exist_ok=True)
+# Base directory path setup
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+# Ensure static & templates directory exist
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+os.makedirs(STATIC_DIR, exist_ok=True)
+
+# Mount static files and setup Jinja2
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # File paths
-MODEL_PATH = "models/rainfall_model.pkl"
-SCALER_PATH = "models/scaler.pkl"
+MODEL_PATH = os.path.join(BASE_DIR, "models", "rainfall_model.pkl")
+SCALER_PATH = os.path.join(BASE_DIR, "models", "scaler.pkl")
 
-# Load Model and Scaler
+model = None
+scaler = None
+
 try:
-    model = joblib.load(MODEL_PATH)
-    scaler = joblib.load(SCALER_PATH)
-    print("Model and Scaler loaded successfully.")
+    if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
+        model = joblib.load(MODEL_PATH)
+        scaler = joblib.load(SCALER_PATH)
+        print("Model and Scaler loaded successfully.")
+    else:
+        print("Missing model or scaler file.")
 except Exception as e:
     print(f"Error loading model/scaler: {e}")
-    model = None
-    scaler = None
 
 class WeatherInput(BaseModel):
     Temp3pm: float
@@ -36,15 +45,21 @@ class WeatherInput(BaseModel):
     WindSpeed3pm: float
     Pressure3pm: float
 
-# 1. UI Home Page Endpoint
+# UI Home Page Endpoint
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    html_file = os.path.join(TEMPLATES_DIR, "index.html")
+    if not os.path.exists(html_file):
+        return HTMLResponse(
+            content="<h3>API is running, but templates/index.html is missing in the build! Please check your repository.</h3>",
+            status_code=200
+        )
     return templates.TemplateResponse("index.html", {
         "request": request,
         "prediction": None
     })
 
-# 2. UI Form Submission Endpoint
+# UI Form Submission Endpoint
 @app.post("/predict-ui", response_class=HTMLResponse)
 def predict_ui(
     request: Request,
@@ -54,27 +69,37 @@ def predict_ui(
     Pressure3pm: float = Form(...)
 ):
     if model is None or scaler is None:
-        raise HTTPException(status_code=500, detail="Model or Scaler not loaded.")
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "prediction": "Error: Model or Scaler file is missing on the server!",
+            "result_class": "rain"
+        })
 
-    # Prepare input and scale
-    input_data = np.array([[Temp3pm, Humidity3pm, WindSpeed3pm, Pressure3pm]])
-    scaled_data = scaler.transform(input_data)
-    prediction = model.predict(scaled_data)[0]
+    try:
+        input_data = np.array([[float(Temp3pm), float(Humidity3pm), float(WindSpeed3pm), float(Pressure3pm)]])
+        scaled_data = scaler.transform(input_data)
+        prediction = model.predict(scaled_data)[0]
 
-    if prediction == 1:
-        result_text = "🌧️ Rain Expected Tomorrow! Carry an umbrella."
-        result_class = "rain"
-    else:
-        result_text = "☀️ No Rain Expected Tomorrow. Enjoy the clear day!"
-        result_class = "no-rain"
+        if prediction == 1:
+            result_text = "🌧️ Rain Expected Tomorrow! Carry an umbrella."
+            result_class = "rain"
+        else:
+            result_text = "☀️ No Rain Expected Tomorrow. Enjoy the clear day!"
+            result_class = "no-rain"
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "prediction": result_text,
-        "result_class": result_class
-    })
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "prediction": result_text,
+            "result_class": result_class
+        })
+    except Exception as e:
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "prediction": f"Prediction Failed: {str(e)}",
+            "result_class": "rain"
+        })
 
-# 3. REST API Endpoint (For JSON access / Swagger)
+# REST API Endpoint
 @app.post("/predict")
 def predict_api(data: WeatherInput):
     if model is None or scaler is None:
