@@ -22,18 +22,37 @@ os.makedirs("data", exist_ok=True)
 csv_file_path = "data/rainfall_data.csv"
 
 # 2. Create sample dataset if it does not exist
+# 2. Creation of realistic dataset
 if not os.path.exists(csv_file_path):
-    print("Creating local dataset for training...")
+    print("Creating realistic local dataset for training...")
     np.random.seed(42)
     n_samples = 20000
     
+    temp = np.random.uniform(10, 42, n_samples)
+    humidity = np.random.uniform(15, 95, n_samples)
+    wind = np.random.uniform(5, 55, n_samples)
+    pressure = np.random.uniform(995, 1030, n_samples)
+    
+    # বাস্তবসম্মত লজিক: আর্দ্রতা ও বাতাস বাড়লে এবং প্রেশার কমলে বৃষ্টির সম্ভাবনা বাড়বে
+    rain_score = (
+        0.06 * (humidity - 50) + 
+        0.03 * (wind - 25) - 
+        0.08 * (pressure - 1012) + 
+        np.random.normal(0, 0.6, n_samples)
+    )
+    
+    # creating probability usin Sigmoid function
+    prob = 1 / (1 + np.exp(-rain_score))
+    rain_tomorrow = ['Yes' if p > 0.5 else 'No' for p in prob]
+    
     data = {
-        'Temp3pm': np.random.uniform(10, 42, n_samples),
-        'Humidity3pm': np.random.uniform(15, 95, n_samples),
-        'WindSpeed3pm': np.random.uniform(5, 55, n_samples),
-        'Pressure3pm': np.random.uniform(995, 1030, n_samples),
-        'RainTomorrow': np.random.choice(['Yes', 'No'], size=n_samples, p=[0.3, 0.7])
+        'Temp3pm': temp,
+        'Humidity3pm': humidity,
+        'WindSpeed3pm': wind,
+        'Pressure3pm': pressure,
+        'RainTomorrow': rain_tomorrow
     }
+    
     pd.DataFrame(data).to_csv(csv_file_path, index=False)
     print(f"Dataset created and saved to {csv_file_path}")
 
