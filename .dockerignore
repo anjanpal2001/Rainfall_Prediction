@@ -1,0 +1,28 @@
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+.env.local
+
+# Git version control
+.git/
+.gitignore
+
+# GitHub actions configs
+.github/
+
+# Environment secrets file
+.env
+
+# Large raw datasets (if not needed inside image)
+# data/rainfall_data.csv
+
+# IDE / OS specific files
+.vscode/
+.idea/
+.DS_Store
