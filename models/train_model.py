@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import RidgeClassifier
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, GridSearchCV
@@ -28,12 +29,12 @@ if not os.path.exists(csv_file_path):
     np.random.seed(42)
     n_samples = 20000
     
-    temp = np.random.uniform(10, 42, n_samples)
-    humidity = np.random.uniform(15, 95, n_samples)
+    temp = np.random.uniform(10, 55, n_samples)
+    humidity = np.random.uniform(15, 97, n_samples)
     wind = np.random.uniform(5, 55, n_samples)
     pressure = np.random.uniform(995, 1030, n_samples)
     
-    # বাস্তবসম্মত লজিক: আর্দ্রতা ও বাতাস বাড়লে এবং প্রেশার কমলে বৃষ্টির সম্ভাবনা বাড়বে
+    # iN genral logic that if humidity and wind speed increases and pressure decrease probabu=ility of rain is increases
     rain_score = (
         0.06 * (humidity - 50) + 
         0.03 * (wind - 25) - 
@@ -102,6 +103,10 @@ models_and_params = {
     'SupportVectorMachine': (
         SVC(probability=True, random_state=42),
         {'C': [0.1, 1.0, 10.0], 'kernel': ['rbf', 'linear']}
+    ),
+    'RidgeClassifier':(
+        RidgeClassifier(random_state=42),
+        {"alpha":[0.01,0.1,1,10],"solver":['auto', 'svd', 'cholesky', 'lsqr']}
     )
 }
 
@@ -109,7 +114,7 @@ best_model = None
 best_accuracy = 0.0
 best_model_name = ""
 
-print("---------- Starting Hyperparameter Tuning on 6 ML Models ----------")
+print("---------- Starting Hyperparameter Tuning on 7 ML Models ----------")
 for name, (model, params) in models_and_params.items():
     grid = GridSearchCV(model, params, cv=3, scoring='accuracy', n_jobs=-1)
     grid.fit(X_train, y_train)
@@ -117,7 +122,7 @@ for name, (model, params) in models_and_params.items():
     y_pred = tuned_model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
     
-    print(f"Model: {name:<22} | Best Params: {grid.best_params_} | Test Accuracy: {acc:.4f}")
+    print(f"Model: {name:<22} | Best Params: {grid.best_params_} | Test Accuracy: {acc * 100:.4f}%")
     if acc > best_accuracy:
         best_accuracy = acc
         best_model = tuned_model
@@ -146,7 +151,7 @@ def upload_to_s3():
     
     s3 = boto3.client('s3', region_name=AWS_REGION)
     
-    # Check if bucket exists, create if missing
+    #* Check if bucket exists, create if missing
     try:
         s3.head_bucket(Bucket=S3_BUCKET)
         print(f"Bucket '{S3_BUCKET}' exists.")
@@ -161,7 +166,7 @@ def upload_to_s3():
             )
         print(f"Bucket '{S3_BUCKET}' created successfully.")
 
-    # Upload model and scaler files to S3
+    #! Upload model and scaler files to S3
     try:
         s3.upload_file(local_model_path, S3_BUCKET, "models/rainfall_model.pkl")
         print(f"Successfully uploaded {local_model_path} to S3 Bucket '{S3_BUCKET}'.")
