@@ -66,3 +66,4 @@ jobs:
               --name rainfall-container \
               -p 8000:8000 \
               ${{ secrets.DOCKERHUB_USERNAME }}/rainfall-app:latest
+         # 7. All are fine till now 
